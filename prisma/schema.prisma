@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String              @id @default(uuid())
+  email             String              @unique
+  password          String
+  firstName         String?
+  lastName          String?
+  role              UserRole            @default(USER)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  salesforceConfigs SalesforceConfig[]
+  forms             Form[]
+  formResponses     FormResponse[]
+}
+
+model SalesforceConfig {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  accessToken  String
+  refreshToken String
+  instanceUrl  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Form {
+  id              String         @id @default(uuid())
+  title           String
+  description     String?
+  salesforceId    String?        // Original Salesforce form ID if imported
+  createdById     String
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  status          FormStatus     @default(DRAFT)
+  formItems       FormItem[]
+  formResponses   FormResponse[]
+  expiresAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model FormItem {
+  id          String        @id @default(uuid())
+  formId      String
+  form        Form          @relation(fields: [formId], references: [id])
+  label       String
+  type        FormItemType
+  required    Boolean       @default(false)
+  order       Int
+  options     Json?         // For select, radio, etc.
+  validation  Json?         // Validation rules
+  salesforceId String?      // Original Salesforce field ID if imported
+  responses   FormItemResponse[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model FormResponse {
+  id          String             @id @default(uuid())
+  formId      String
+  form        Form               @relation(fields: [formId], references: [id])
+  submittedById String?
+  submittedBy  User?             @relation(fields: [submittedById], references: [id])
+  status      ResponseStatus     @default(PENDING)
+  items       FormItemResponse[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model FormItemResponse {
+  id            String       @id @default(uuid())
+  formResponseId String
+  formResponse   FormResponse @relation(fields: [formResponseId], references: [id])
+  formItemId     String
+  formItem       FormItem     @relation(fields: [formItemId], references: [id])
+  value          Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  CONTRACTOR
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FormItemType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  DATE
+  SELECT
+  MULTISELECT
+  RADIO
+  CHECKBOX
+  FILE
+}
+
+enum ResponseStatus {
+  PENDING
+  SUBMITTED
+  SYNCED
+  ERROR
+}
