@@ -23,8 +23,10 @@ model User {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   salesforceConfigs SalesforceConfig[]
-  forms             Form[]
+  createdForms      Form[]              @relation("createdForms")
   formResponses     FormResponse[]
+  assignedForms     FormAssignment[]    // Forms assigned to this user
+  formsAssigned     FormAssignment[]    @relation("assignedForms") // Forms this user has assigned to others
 }
 
 model SalesforceConfig {
@@ -44,13 +46,14 @@ model Form {
   description     String?
   salesforceId    String?        // Original Salesforce form ID if imported
   createdById     String
-  createdBy       User           @relation(fields: [createdById], references: [id])
+  createdBy       User           @relation(fields: [createdById], references: [id], name: "createdForms")
   status          FormStatus     @default(DRAFT)
   formItems       FormItem[]
   formResponses   FormResponse[]
   expiresAt       DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  assignedUsers   FormAssignment[] // Many-to-many relationship with users
 }
 
 model FormItem {
@@ -92,6 +95,23 @@ model FormItemResponse {
   updatedAt      DateTime     @updatedAt
 }
 
+// New model for form assignments
+model FormAssignment {
+  id              String         @id @default(uuid())
+  formId          String
+  form            Form           @relation(fields: [formId], references: [id])
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  assignedAt      DateTime       @default(now())
+  assignedById    String
+  assignedBy      User           @relation(fields: [assignedById], references: [id], name: "assignedForms")
+  status          AssignmentStatus @default(PENDING)
+  dueDate         DateTime?
+  completedAt     DateTime?
+  
+  @@unique([formId, userId]) // Prevent duplicate assignments
+}
+
 enum UserRole {
   ADMIN
   USER
@@ -121,4 +141,13 @@ enum ResponseStatus {
   SUBMITTED
   SYNCED
   ERROR
+}
+
+// Add a new enum for assignment status
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  EXPIRED
 }

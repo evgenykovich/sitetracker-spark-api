@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { CreateFormDto } from './dto/create-form.dto';
 import { UpdateFormDto } from './dto/update-form.dto';
@@ -6,6 +10,7 @@ import { SubmitFormResponseDto } from './dto/submit-form-response.dto';
 import { SalesforceFormService } from '../salesforce/services/salesforce-form.service';
 import { LoggerService } from '../../common/services/logger.service';
 import { KafkaService } from '../../common/services/kafka.service';
+import { AssignFormDto } from './dto/assign-form.dto';
 
 @Injectable()
 export class FormsService {
@@ -20,23 +25,85 @@ export class FormsService {
   async create(createFormDto: CreateFormDto, userId: string) {
     this.logger.log(`Creating new form for user ${userId}`);
 
-    const form = await this.prisma.form.create({
-      data: {
-        ...createFormDto,
-        createdById: userId,
-        formItems: {
-          create: createFormDto.formItems.map((item, index) => ({
-            ...item,
-            order: index,
-          })),
-        },
-      },
-      include: {
-        formItems: true,
-      },
-    });
+    // Remove assigneeIds from the DTO as it's not part of the Form model
+    const { assigneeIds, assignmentDueDate, ...formData } = createFormDto;
 
-    this.logger.log(`Created form with ID ${form.id}`);
+    // Start a transaction to create the form and its assignments
+    const form = await this.prisma.$transaction(async (tx) => {
+      // Create the form
+      const newForm = await tx.form.create({
+        data: {
+          ...formData,
+          createdById: userId,
+          formItems: {
+            create: formData.formItems.map((item, index) => ({
+              ...item,
+              order: index,
+            })),
+          },
+        },
+        include: {
+          formItems: true,
+        },
+      });
+
+      this.logger.log(`Created form with ID ${newForm.id}`);
+
+      // If assignees are specified and the form is published, create assignments
+      if (assigneeIds?.length && newForm.status === 'PUBLISHED') {
+        this.logger.log(
+          `Assigning form ${newForm.id} to ${assigneeIds.length} users during creation`,
+        );
+
+        // Create assignments for each user
+        await Promise.all(
+          assigneeIds.map(async (assigneeId) => {
+            try {
+              // Verify the user exists
+              const user = await tx.user.findUnique({
+                where: { id: assigneeId },
+              });
+
+              if (!user) {
+                this.logger.warn(
+                  `User with ID ${assigneeId} not found, skipping assignment`,
+                );
+                return;
+              }
+
+              // Create the assignment
+              await tx.formAssignment.create({
+                data: {
+                  formId: newForm.id,
+                  userId: assigneeId,
+                  assignedById: userId,
+                  status: 'PENDING' as any,
+                  dueDate: assignmentDueDate
+                    ? new Date(assignmentDueDate)
+                    : undefined,
+                },
+              });
+
+              this.logger.log(
+                `Form ${newForm.id} assigned to user ${assigneeId}`,
+              );
+            } catch (error) {
+              this.logger.error(
+                `Error assigning form to user ${assigneeId}:`,
+                error.stack,
+              );
+              // Don't fail the whole transaction for an assignment failure
+            }
+          }),
+        );
+      } else if (assigneeIds?.length && newForm.status !== 'PUBLISHED') {
+        this.logger.warn(
+          `Form ${newForm.id} not published, cannot assign to users`,
+        );
+      }
+
+      return newForm;
+    });
 
     // If form is imported from Salesforce, queue sync job
     if (form.salesforceId) {
@@ -181,5 +248,244 @@ export class FormsService {
     }
 
     return response;
+  }
+
+  // New methods for form assignments
+  async assignForm(
+    formId: string,
+    assignFormDto: AssignFormDto,
+    assignedById: string,
+  ) {
+    this.logger.log(
+      `Assigning form ${formId} to ${assignFormDto.userIds.length} users`,
+    );
+
+    // Verify the form exists
+    const form = await this.findOne(formId);
+
+    // Verify the form is published
+    if (form.status !== 'PUBLISHED') {
+      throw new BadRequestException('Only published forms can be assigned');
+    }
+
+    try {
+      // Create assignments for each user
+      const assignments = await Promise.all(
+        assignFormDto.userIds.map(async (userId) => {
+          // Check if user exists
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+          });
+
+          if (!user) {
+            throw new NotFoundException(`User with ID ${userId} not found`);
+          }
+
+          // Create or update the assignment
+          return this.prisma.formAssignment.upsert({
+            where: {
+              formId_userId: {
+                formId: form.id,
+                userId,
+              },
+            },
+            update: {
+              assignedById,
+              status: 'PENDING' as any,
+              dueDate: assignFormDto.dueDate
+                ? new Date(assignFormDto.dueDate)
+                : undefined,
+              completedAt: null,
+            },
+            create: {
+              formId: form.id,
+              userId,
+              assignedById,
+              status: 'PENDING' as any,
+              dueDate: assignFormDto.dueDate
+                ? new Date(assignFormDto.dueDate)
+                : undefined,
+            },
+          });
+        }),
+      );
+
+      this.logger.log(
+        `Successfully assigned form ${formId} to ${assignments.length} users`,
+      );
+
+      // Send notification via Kafka if needed
+      if (form.salesforceId) {
+        this.logger.log(
+          `Queueing Salesforce notifications for form assignments`,
+        );
+        // Implementation pending based on your Kafka service capabilities
+      }
+
+      return assignments;
+    } catch (error) {
+      this.logger.error(`Error assigning form ${formId}`, error.stack);
+      throw error;
+    }
+  }
+
+  async getFormAssignments(formId: string) {
+    this.logger.log(`Getting assignments for form ${formId}`);
+
+    // Verify the form exists
+    await this.findOne(formId);
+
+    return this.prisma.formAssignment.findMany({
+      where: {
+        formId,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        assignedBy: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getUserAssignments(userId: string) {
+    this.logger.log(`Getting form assignments for user ${userId}`);
+
+    return this.prisma.formAssignment.findMany({
+      where: {
+        userId,
+      },
+      include: {
+        form: {
+          include: {
+            _count: {
+              select: {
+                formItems: true,
+              },
+            },
+          },
+        },
+        assignedBy: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+  }
+
+  async updateAssignmentStatus(
+    assignmentId: string,
+    status: string,
+    userId: string,
+  ) {
+    this.logger.log(`Updating assignment ${assignmentId} status to ${status}`);
+
+    // Validate status
+    const validStatuses = [
+      'PENDING',
+      'ACCEPTED',
+      'REJECTED',
+      'COMPLETED',
+      'EXPIRED',
+    ];
+    if (!validStatuses.includes(status)) {
+      throw new BadRequestException(
+        `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+      );
+    }
+
+    // Find the assignment
+    const assignment = await this.prisma.formAssignment.findUnique({
+      where: { id: assignmentId },
+      include: {
+        form: true,
+      },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        `Assignment with ID ${assignmentId} not found`,
+      );
+    }
+
+    // Check if the user is authorized to update this assignment
+    // User must be either the assignee or the one who assigned it
+    if (assignment.userId !== userId && assignment.assignedById !== userId) {
+      throw new BadRequestException('Not authorized to update this assignment');
+    }
+
+    // Update the assignment status
+    const updatedAssignment = await this.prisma.formAssignment.update({
+      where: { id: assignmentId },
+      data: {
+        status: status as any,
+        completedAt:
+          status === 'COMPLETED' ? new Date() : assignment.completedAt,
+      },
+      include: {
+        form: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    // Optionally send notification via Kafka
+    if (assignment.form.salesforceId) {
+      this.logger.log(`Queueing Salesforce notification for assignment update`);
+      // Implementation pending based on your Kafka service capabilities
+    }
+
+    return updatedAssignment;
+  }
+
+  async removeAssignment(assignmentId: string, userId: string) {
+    this.logger.log(`Removing assignment ${assignmentId}`);
+
+    // Find the assignment
+    const assignment = await this.prisma.formAssignment.findUnique({
+      where: { id: assignmentId },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        `Assignment with ID ${assignmentId} not found`,
+      );
+    }
+
+    // Check if the user is authorized to remove this assignment
+    // Only the one who assigned it can remove it
+    if (assignment.assignedById !== userId) {
+      throw new BadRequestException('Not authorized to remove this assignment');
+    }
+
+    // Delete the assignment
+    await this.prisma.formAssignment.delete({
+      where: { id: assignmentId },
+    });
+
+    return { success: true };
   }
 }
