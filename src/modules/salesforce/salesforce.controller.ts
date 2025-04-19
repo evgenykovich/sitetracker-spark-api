@@ -15,13 +15,17 @@ import {
   ApiResponse,
   ApiBearerAuth,
   getSchemaPath,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { SalesforceAuthService } from './services/salesforce-auth.service';
 import { SalesforceFormService } from './services/salesforce-form.service';
+import { SalesforceContractorService } from './services/salesforce-contractor.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   SalesforceForm,
   SalesforceFormField,
+  SalesforceUser,
+  SalesforceLocation,
 } from './interfaces/salesforce.types';
 import { PrismaService } from '../../common/prisma.service';
 import { Logger } from '@nestjs/common';
@@ -34,6 +38,7 @@ export class SalesforceController {
   constructor(
     private readonly salesforceAuthService: SalesforceAuthService,
     private readonly salesforceFormService: SalesforceFormService,
+    private readonly salesforceContractorService: SalesforceContractorService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -130,6 +135,44 @@ export class SalesforceController {
     return { success: true };
   }
 
+  @Get('connection/details')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get Salesforce connection details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns safe connection details',
+  })
+  async getConnectionDetails(@Request() req) {
+    try {
+      const config = await this.prisma.salesforceConfig.findFirst({
+        where: { userId: req.user.id },
+        select: {
+          instanceUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!config) {
+        return {
+          connected: false,
+          message: 'No Salesforce connection found',
+        };
+      }
+
+      return {
+        connected: true,
+        instanceUrl: config.instanceUrl,
+        connectedAt: config.createdAt,
+        lastUpdated: config.updatedAt,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching connection details:', error.stack);
+      throw error;
+    }
+  }
+
   @Get('forms')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -184,41 +227,131 @@ export class SalesforceController {
     return this.salesforceFormService.getFormFields(formId, req.user.id);
   }
 
-  @Get('connection/details')
+  @Get('contractors')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get Salesforce connection details' })
+  @ApiOperation({
+    summary: 'Get all contractors with optional filtering',
+    description:
+      'Retrieves a list of contractors that can be filtered by location, state, type, and status.',
+  })
+  @ApiQuery({
+    name: 'location',
+    required: false,
+    description: 'Filter by location/city',
+    example: 'San Francisco',
+  })
+  @ApiQuery({
+    name: 'state',
+    required: false,
+    description: 'Filter by state',
+    example: 'CA',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    description: 'Filter by contractor type (e.g., Electrician, Plumber)',
+    example: 'Electrician',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter by contractor status (e.g., Active, Inactive)',
+    example: 'Active',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Returns safe connection details',
-  })
-  async getConnectionDetails(@Request() req) {
-    try {
-      const config = await this.prisma.salesforceConfig.findFirst({
-        where: { userId: req.user.id },
-        select: {
-          instanceUrl: true,
-          createdAt: true,
-          updatedAt: true,
+    description: 'List of contractors matching the filter criteria',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          email: { type: 'string' },
+          location: {
+            type: 'object',
+            properties: {
+              city: { type: 'string' },
+              state: { type: 'string' },
+            },
+          },
         },
-      });
+      },
+    },
+  })
+  async getContractors(
+    @Request() req,
+    @Query('location') location?: string,
+    @Query('state') state?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+  ): Promise<SalesforceUser[]> {
+    return this.salesforceContractorService.getContractors(req.user.id, {
+      location,
+      state,
+      contractorType: type,
+      contractorStatus: status,
+    });
+  }
 
-      if (!config) {
-        return {
-          connected: false,
-          message: 'No Salesforce connection found',
-        };
-      }
+  @Get('contractors/locations')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all unique contractor locations',
+    description:
+      'Retrieves a list of unique locations where contractors are based, including the count of contractors in each location.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of unique contractor locations with counts',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          city: { type: 'string' },
+          state: { type: 'string' },
+          count: { type: 'number' },
+        },
+      },
+    },
+  })
+  async getContractorLocations(@Request() req): Promise<SalesforceLocation[]> {
+    return this.salesforceContractorService.getContractorLocations(req.user.id);
+  }
 
-      return {
-        connected: true,
-        instanceUrl: config.instanceUrl,
-        connectedAt: config.createdAt,
-        lastUpdated: config.updatedAt,
-      };
-    } catch (error) {
-      this.logger.error('Error fetching connection details:', error.stack);
-      throw error;
-    }
+  @Get('contractors/types')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all contractor types',
+    description: 'Retrieves a list of unique contractor types/categories.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of contractor types',
+    type: [String],
+  })
+  async getContractorTypes(@Request() req): Promise<string[]> {
+    return this.salesforceContractorService.getContractorTypes(req.user.id);
+  }
+
+  @Get('contractors/statuses')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all contractor statuses',
+    description: 'Retrieves a list of unique contractor statuses.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of contractor statuses',
+    type: [String],
+  })
+  async getContractorStatuses(@Request() req): Promise<string[]> {
+    return this.salesforceContractorService.getContractorStatuses(req.user.id);
   }
 }

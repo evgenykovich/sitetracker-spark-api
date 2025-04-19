@@ -27,6 +27,22 @@ model User {
   formResponses     FormResponse[]
   assignedForms     FormAssignment[]    // Forms assigned to this user
   formsAssigned     FormAssignment[]    @relation("assignedForms") // Forms this user has assigned to others
+  contractorProfile ContractorProfile?  // One-to-one relation with contractor profile
+}
+
+// Contractor profile for additional contractor information
+model ContractorProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  phone         String?
+  company       String?
+  street        String?
+  city          String?
+  state         String?
+  zipCode       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model SalesforceConfig {

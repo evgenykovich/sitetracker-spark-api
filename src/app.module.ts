@@ -8,6 +8,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { SalesforceModule } from './modules/salesforce/salesforce.module';
+import { ContractorsModule } from './modules/contractors/contractors.module';
 import { LoggerService } from './common/services/logger.service';
 import { MetricsModule } from './common/modules/metrics/metrics.module';
 import { KafkaModule } from './common/modules/kafka/kafka.module';
@@ -40,6 +41,7 @@ import { KafkaModule } from './common/modules/kafka/kafka.module';
     UsersModule,
     FormsModule,
     SalesforceModule,
+    ContractorsModule,
     MetricsModule,
     KafkaModule,
   ],

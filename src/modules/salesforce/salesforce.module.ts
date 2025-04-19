@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma.service';
 import { SalesforceAuthService } from './services/salesforce-auth.service';
 import { SalesforceFormService } from './services/salesforce-form.service';
+import { SalesforceContractorService } from './services/salesforce-contractor.service';
 import { SalesforceController } from './salesforce.controller';
 
 @Module({
@@ -13,8 +14,17 @@ import { SalesforceController } from './salesforce.controller';
       name: 'salesforce',
     }),
   ],
-  providers: [PrismaService, SalesforceAuthService, SalesforceFormService],
+  providers: [
+    PrismaService,
+    SalesforceAuthService,
+    SalesforceFormService,
+    SalesforceContractorService,
+  ],
   controllers: [SalesforceController],
-  exports: [SalesforceAuthService, SalesforceFormService],
+  exports: [
+    SalesforceAuthService,
+    SalesforceFormService,
+    SalesforceContractorService,
+  ],
 })
 export class SalesforceModule {}
