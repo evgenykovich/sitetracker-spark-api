@@ -132,7 +132,7 @@ export class ContractorsController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.USER)
   @ApiOperation({ summary: 'Update a contractor' })
   @ApiParam({ name: 'id', description: 'Contractor ID' })
   @ApiResponse({

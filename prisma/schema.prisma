@@ -32,17 +32,18 @@ model User {
 
 // Contractor profile for additional contractor information
 model ContractorProfile {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id])
+  id            String              @id @default(uuid())
+  userId        String              @unique
+  user          User                @relation(fields: [userId], references: [id])
   phone         String?
   company       String?
   street        String?
   city          String?
   state         String?
   zipCode       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  specialties   ContractorSpecialty[] // Many-to-many relation with specialties
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 }
 
 model SalesforceConfig {
@@ -126,6 +127,16 @@ model FormAssignment {
   completedAt     DateTime?
   
   @@unique([formId, userId]) // Prevent duplicate assignments
+}
+
+// New model for contractor specialties
+model ContractorSpecialty {
+  id          String              @id @default(uuid())
+  name        String              @unique
+  description String?
+  contractors ContractorProfile[] // Many-to-many relation with contractor profiles
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 }
 
 enum UserRole {

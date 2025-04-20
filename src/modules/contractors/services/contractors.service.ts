@@ -108,6 +108,11 @@ export class ContractorsService {
         role: UserRole.CONTRACTOR,
       },
       include: {
+        contractorProfile: {
+          include: {
+            specialties: true,
+          },
+        },
         assignedForms: {
           include: {
             form: {
