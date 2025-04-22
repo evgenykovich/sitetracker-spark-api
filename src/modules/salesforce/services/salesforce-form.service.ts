@@ -489,12 +489,14 @@ export class SalesforceFormService implements ISalesforceFormService {
                     'Field_Type__c',
                     'Order__c',
                   ]
-                    .map((f) => `${namespace}${f}`)
+                    .map((f) => (namespace ? `${namespace}${f}` : f))
                     .join(', ')}
                   FROM ${namespace}st_Photo_Validation_Checklist_Item__c
                   WHERE ${namespace}st_Photo_Validation_Checklist__c = '${photoValidationChecklistId}'
                   ORDER BY ${namespace}Order__c ASC
                 `;
+
+              this.logger.log('Validation items query:', validationItemsQuery);
 
               const validationItems = await conn.query<{
                 Id: string;
