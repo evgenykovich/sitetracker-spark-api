@@ -29,10 +29,11 @@ async function bootstrap() {
     const middlewareStart = performance.now();
 
     app.enableCors({
-      origin: 'http://localhost:3001',
+      origin: ['http://localhost:3001', 'http://localhost:5173'],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     });
+
     app.use(helmet());
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true }));

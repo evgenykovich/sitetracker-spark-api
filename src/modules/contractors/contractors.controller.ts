@@ -44,7 +44,7 @@ export class ContractorsController {
   ) {}
 
   @Post()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.USER)
   @ApiOperation({ summary: 'Create a new contractor' })
   @ApiResponse({
     status: 201,
@@ -55,7 +55,7 @@ export class ContractorsController {
   }
 
   @Post('import')
-  @Roles(UserRole.USER)
+  @Roles(UserRole.ADMIN, UserRole.USER)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Import contractors from Excel file' })
@@ -132,7 +132,7 @@ export class ContractorsController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.USER)
+  @Roles(UserRole.ADMIN, UserRole.USER)
   @ApiOperation({ summary: 'Update a contractor' })
   @ApiParam({ name: 'id', description: 'Contractor ID' })
   @ApiResponse({
@@ -151,7 +151,7 @@ export class ContractorsController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.USER)
   @ApiOperation({ summary: 'Delete a contractor' })
   @ApiParam({ name: 'id', description: 'Contractor ID' })
   @ApiResponse({

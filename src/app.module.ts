@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { CacheModule } from '@nestjs/cache-manager';
 import { ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 
@@ -12,6 +11,7 @@ import { ContractorsModule } from './modules/contractors/contractors.module';
 import { LoggerService } from './common/services/logger.service';
 import { MetricsModule } from './common/modules/metrics/metrics.module';
 import { KafkaModule } from './common/modules/kafka/kafka.module';
+import { CacheModule } from './common/modules/cache/cache.module';
 
 @Module({
   imports: [
@@ -21,12 +21,8 @@ import { KafkaModule } from './common/modules/kafka/kafka.module';
       load: [configuration],
     }),
 
-    // In-Memory Cache
-    CacheModule.register({
-      isGlobal: true,
-      ttl: 60 * 60, // 1 hour default TTL
-      max: 100, // Maximum number of items in cache
-    }),
+    // Custom Cache Module (replaces built-in CacheModule)
+    CacheModule,
 
     // Rate Limiting (using built-in ThrottlerModule instead of Redis-based one)
     ThrottlerModule.forRoot([
